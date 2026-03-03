@@ -1,7 +1,6 @@
 # --- Tkinter imports ---
 from tkinter import *
 from tkinter import ttk, messagebox
-import sqlite3
 
 # --- Utility: Center window on screen ---
 def center_window(win, width=1100, height=600):
@@ -42,8 +41,6 @@ add_lost_window = None
 add_found_window = None
 edit_user_window = None
 dark_mode = False
-# Maps displayed item ID in tree -> (table_type, db_id, item_name)
-item_row_map = {}
 
 # Header Frame
 header_frame = Frame(root, bg="#2196F3", height=80)
@@ -355,54 +352,6 @@ def refresh_table():
     load_items()
     messagebox.showinfo("Refresh", "Table refreshed successfully!")
 
-
-def delete_item():
-    selected = tree.selection()
-    if not selected:
-        messagebox.showerror("Error", "Please select an item to delete!", parent=root)
-        return
-
-    selected_values = tree.item(selected[0]).get('values', [])
-    if not selected_values:
-        messagebox.showerror("Error", "Invalid selection.", parent=root)
-        return
-
-    display_id = selected_values[0]
-    item_info = item_row_map.get(display_id)
-    if not item_info:
-        messagebox.showerror("Error", "Could not find selected item in database map. Please refresh and try again.", parent=root)
-        return
-
-    item_type, db_id, item_name = item_info
-    table_name = {
-        "Lost": "lost_items",
-        "Found": "found_items",
-        "Claimed": "claimed_items",
-    }.get(item_type)
-
-    if not table_name:
-        messagebox.showerror("Error", f"Unsupported item type: {item_type}", parent=root)
-        return
-
-    if not messagebox.askyesno(
-        "Confirm Delete",
-        f"Delete {item_type} item '{item_name}'?",
-        parent=root
-    ):
-        return
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(f"DELETE FROM {table_name} WHERE id=?", (db_id,))
-        conn.commit()
-        conn.close()
-        load_items()
-        update_stats()
-        messagebox.showinfo("Success", f"Item '{item_name}' deleted successfully!", parent=root)
-    except Exception as e:
-        messagebox.showerror("Database Error", str(e), parent=root)
-
 # Action buttons frame
 action_frame = Frame(items_frame, bg="white", height=80)
 action_frame.pack(fill=X, padx=20, pady=10)
@@ -441,11 +390,9 @@ scrollbar.pack(side=RIGHT, fill=Y)
 
 # Function to load all items from the database into the items table
 def load_items():
-    global item_row_map
     # Clear existing items
     for item in tree.get_children():
         tree.delete(item)
-    item_row_map = {}
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -472,7 +419,6 @@ def load_items():
             # Replace the database id with display_id
             new_row = (display_id,) + row[1:]
             tree.insert('', 'end', values=new_row)
-            item_row_map[display_id] = (row[3], row[0], row[1])
             display_id += 1
     except Exception as e:
         messagebox.showerror("Database Error", str(e))
@@ -481,127 +427,6 @@ def load_items():
 load_items()
 
 # Users Management Tab Content
-add_user_window = None
-
-def add_user():
-    global add_user_window
-    
-    if add_user_window is not None and add_user_window.winfo_exists():
-        add_user_window.lift()
-        return
-    
-    add_user_window = Toplevel()
-    add_user_window.title("Add New User")
-    center_window(add_user_window, 1100, 600)
-    add_user_window.resizable(0, 0)
-    add_user_window.configure(bg="black")
-    add_user_window.grab_set()
-    add_user_window.transient(root)
-    
-    def on_closing():
-        global add_user_window
-        add_user_window.destroy()
-        add_user_window = None
-    
-    add_user_window.protocol("WM_DELETE_WINDOW", on_closing)
-    
-    # Header
-    header_frame = Frame(add_user_window, bg="#5DADE2", height=60)
-    header_frame.pack(fill=X)
-    header_frame.pack_propagate(False)
-    
-    Label(header_frame, text="Add New User", font=("Arial", 18, "bold"), 
-          bg="#5DADE2", fg="white").pack(pady=15)
-
-    # Form frame with black background
-    form_frame = Frame(add_user_window, bg="black")
-    form_frame.pack(fill=BOTH, expand=True, padx=40, pady=30)
-    
-    # Form fields
-    y_pos = 50
-    
-    # Username
-    Label(form_frame, text="Username:", font=("Arial", 12), bg="black", fg="white").place(x=50, y=y_pos)
-    username = Entry(form_frame, width=30, font=("Arial", 11), bd=1, relief="solid")
-    username.place(x=200, y=y_pos)
-    
-    # Password
-    y_pos += 40
-    Label(form_frame, text="Password:", font=("Arial", 12), bg="black", fg="white").place(x=50, y=y_pos)
-    password = Entry(form_frame, width=30, font=("Arial", 11), bd=1, relief="solid", show="*")
-    password.place(x=200, y=y_pos)
-    
-    # Full Name
-    y_pos += 40
-    Label(form_frame, text="Full Name:", font=("Arial", 12), bg="black", fg="white").place(x=50, y=y_pos)
-    full_name = Entry(form_frame, width=30, font=("Arial", 11), bd=1, relief="solid")
-    full_name.place(x=200, y=y_pos)
-    
-    # Email
-    y_pos += 40
-    Label(form_frame, text="Email:", font=("Arial", 12), bg="black", fg="white").place(x=50, y=y_pos)
-    email = Entry(form_frame, width=30, font=("Arial", 11), bd=1, relief="solid")
-    email.place(x=200, y=y_pos)
-
-    # Phone
-    y_pos += 40
-    Label(form_frame, text="Phone:", font=("Arial", 12), bg="black", fg="white").place(x=50, y=y_pos)
-    phone = Entry(form_frame, width=30, font=("Arial", 11), bd=1, relief="solid")
-    phone.place(x=200, y=y_pos)
-    
-    # User Type
-    y_pos += 40
-    Label(form_frame, text="User Type:", font=("Arial", 12), bg="black", fg="white").place(x=50, y=y_pos)
-    user_type = ttk.Combobox(form_frame, width=28, font=("Arial", 11), state="readonly")
-    user_type['values'] = ('user', 'admin')
-    user_type.place(x=200, y=y_pos)
-    user_type.set('user')
-
-    def create_user():
-        # Validate fields
-        if not all([username.get().strip(), password.get().strip(), full_name.get().strip(), 
-                    email.get().strip(), phone.get().strip()]):
-            messagebox.showerror("Error", "Please fill all fields!")
-            return
-        
-        if "@" not in email.get() or "." not in email.get():
-            messagebox.showerror("Error", "Please enter a valid email address!")
-            return
-        
-        if len(password.get()) < 4:
-            messagebox.showerror("Error", "Password must be at least 4 characters long!")
-            return
-        
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO users (username, password, full_name, email, phone, user_type) VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    username.get().strip(),
-                    password.get().strip(),
-                    full_name.get().strip(),
-                    email.get().strip(),
-                    phone.get().strip(),
-                    user_type.get()
-                ))
-            conn.commit()
-            conn.close()
-            load_users()
-            messagebox.showinfo("Success", "User created successfully!")
-            on_closing()
-        except sqlite3.IntegrityError:
-            messagebox.showerror("Error", "Username already exists!")
-        except Exception as e:
-            messagebox.showerror("Database Error", str(e))
-    
-    # Buttons
-    y_pos += 50
-    Button(form_frame, text="Create", font=("Arial", 12, "bold"), bg="#28a745", fg="white", 
-           width=12, command=create_user).place(x=200, y=y_pos)
-    Button(form_frame, text="Cancel", font=("Arial", 12, "bold"), bg="#dc3545", fg="white",
-           width=12, command=on_closing).place(x=350, y=y_pos)
-
-
 def edit_user():
     global edit_user_window
     
@@ -761,10 +586,6 @@ users_action_frame = Frame(users_frame, bg="white", height=80)
 users_action_frame.pack(fill=X, padx=20, pady=10)
 users_action_frame.pack_propagate(False)
 
-
-# Add User button
-Button(users_action_frame, text="Add User", font=("Arial", 12, "bold"), bg="#4CAF50", 
-       fg="white", width=15, height=2, command=add_user).pack(side=LEFT, padx=10, pady=10)
 
 # Edit User button
 Button(users_action_frame, text="Edit User", font=("Arial", 12, "bold"), bg="#FF9800", 
